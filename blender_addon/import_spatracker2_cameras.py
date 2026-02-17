@@ -184,14 +184,14 @@ def import_single_animated_camera(context, cam_files, collection, frame_start, f
         if len(extrinsics) == 4 and len(extrinsics[0]) == 4:
             ext_mat = mathutils.Matrix(extrinsics)
             blender_mat = ext_mat @ cv_to_blender
-            
+
             # Set location and rotation keyframes
             loc, rot, scale = blender_mat.decompose()
-            
+
             cam_obj.location = loc
             cam_obj.rotation_mode = 'QUATERNION'
-            cam_obj.rotation_quaternion = rot.to_quaternion()
-            
+            cam_obj.rotation_quaternion = rot  # rot is already a Quaternion
+
             cam_obj.keyframe_insert(data_path="location", frame=current_frame)
             cam_obj.keyframe_insert(data_path="rotation_quaternion", frame=current_frame)
     
