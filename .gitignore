@@ -1,0 +1,41 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*.so
+.env
+.Python
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Pinokio
+ENVIRONMENT
+logs/
+cache/
+exports/
+processed/
+uploads/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation (Pinokio specific)
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+QWEN.md
+SPEC.md
+
+# App folder (3rd party repo)
+/app/
