@@ -256,19 +256,28 @@ def import_ply_sequence(context, filepath, frame_start=1, scale=1.0,
         
         # Add to collection
         collection.objects.link(obj)
+
+        # Set visibility keyframes - show only for this single frame
+        current_frame = frame_start + i
         
-        # Set visibility keyframes
+        # Start hidden
         obj.hide_viewport = True
         obj.hide_render = True
-        obj.keyframe_insert(data_path="hide_viewport", frame=frame_start + i)
-        obj.keyframe_insert(data_path="hide_render", frame=frame_start + i)
+        obj.keyframe_insert(data_path="hide_viewport", frame=current_frame - 0.5)
+        obj.keyframe_insert(data_path="hide_render", frame=current_frame - 0.5)
         
-        # Show only for this frame
+        # Show at this frame
         obj.hide_viewport = False
         obj.hide_render = False
-        obj.keyframe_insert(data_path="hide_viewport", frame=frame_start + i + 1)
-        obj.keyframe_insert(data_path="hide_render", frame=frame_start + i + 1)
+        obj.keyframe_insert(data_path="hide_viewport", frame=current_frame)
+        obj.keyframe_insert(data_path="hide_render", frame=current_frame)
         
+        # Hide again at next frame
+        obj.hide_viewport = True
+        obj.hide_render = True
+        obj.keyframe_insert(data_path="hide_viewport", frame=current_frame + 0.5)
+        obj.keyframe_insert(data_path="hide_render", frame=current_frame + 0.5)
+
         objects.append(obj)
     
     # Create empty to hold all objects
