@@ -54,6 +54,12 @@ class ImportSpaTracker2Cameras(bpy.types.Operator, ImportHelper):
         default=True
     )
 
+    single_camera: BoolProperty(
+        name="Single Animated Camera",
+        description="Create one camera that moves through all frames (instead of one camera per frame)",
+        default=False
+    )
+
     set_active_camera: BoolProperty(
         name="Set Active Camera",
         description="Set first camera as active scene camera",
@@ -69,6 +75,7 @@ class ImportSpaTracker2Cameras(bpy.types.Operator, ImportHelper):
         col.prop(self, "frame_start")
         col.prop(self, "camera_size")
         col.prop(self, "animate_cameras")
+        col.prop(self, "single_camera")
         col.prop(self, "set_active_camera")
 
     def execute(self, context):
@@ -79,6 +86,7 @@ class ImportSpaTracker2Cameras(bpy.types.Operator, ImportHelper):
                 frame_start=self.frame_start,
                 camera_size=self.camera_size,
                 animate_cameras=self.animate_cameras,
+                single_camera=self.single_camera,
                 set_active_camera=self.set_active_camera
             )
         except Exception as e:
@@ -87,7 +95,7 @@ class ImportSpaTracker2Cameras(bpy.types.Operator, ImportHelper):
 
 
 def import_cameras_sequence(context, filepath, frame_start=1, camera_size=0.1,
-                            animate_cameras=True, set_active_camera=True):
+                            animate_cameras=True, single_camera=False, set_active_camera=True):
     """Main import function for camera sequence."""
 
     filepath = Path(filepath)
@@ -120,6 +128,96 @@ def import_cameras_sequence(context, filepath, frame_start=1, camera_size=0.1,
     # Set scene frame rate
     context.scene.render.fps = fps
 
+    if single_camera:
+        # Create single animated camera
+        return import_single_animated_camera(
+            context, cam_files, collection, frame_start, fps, camera_size, set_active_camera
+        )
+    else:
+        # Create one camera per frame (original behavior)
+        return import_multiple_cameras(
+            context, cam_files, collection, frame_start, fps, camera_size, animate_cameras, set_active_camera
+        )
+
+
+def import_single_animated_camera(context, cam_files, collection, frame_start, fps, camera_size, set_active_camera):
+    """Create a single camera that is animated through all frames."""
+    
+    # Create single camera
+    cam = bpy.data.cameras.new("AnimatedCamera")
+    cam_obj = bpy.data.objects.new("AnimatedCamera", cam)
+    collection.objects.link(cam_obj)
+    
+    # Set camera properties
+    cam.sensor_width = 32
+    cam.clip_start = 0.01
+    cam.clip_end = 1000
+    cam_obj.scale = (camera_size, camera_size, camera_size)
+    
+    # Convert OpenCV to Blender coordinate system
+    cv_to_blender = mathutils.Matrix([
+        [1, 0, 0, 0],
+        [0, -1, 0, 0],
+        [0, 0, -1, 0],
+        [0, 0, 0, 1]
+    ])
+    
+    # Animate camera through all frames
+    print(f"Animating single camera through {len(cam_files)} frames...")
+    
+    for i, cam_file in enumerate(cam_files):
+        with open(cam_file, 'r') as f:
+            cam_data = json.load(f)
+        
+        current_frame = frame_start + i
+        
+        # Get intrinsics
+        intrinsics = cam_data.get('intrinsics', [])
+        width = cam_data.get('width', 256)
+        
+        if len(intrinsics) >= 3:
+            fx = intrinsics[0][0]
+            cam.lens = fx / width * cam.sensor_width * 1000
+        
+        # Get extrinsics and set keyframe
+        extrinsics = cam_data.get('extrinsics', [])
+        if len(extrinsics) == 4 and len(extrinsics[0]) == 4:
+            ext_mat = mathutils.Matrix(extrinsics)
+            blender_mat = ext_mat @ cv_to_blender
+            
+            # Set location and rotation keyframes
+            loc, rot, scale = blender_mat.decompose()
+            
+            cam_obj.location = loc
+            cam_obj.rotation_mode = 'QUATERNION'
+            cam_obj.rotation_quaternion = rot.to_quaternion()
+            
+            cam_obj.keyframe_insert(data_path="location", frame=current_frame)
+            cam_obj.keyframe_insert(data_path="rotation_quaternion", frame=current_frame)
+    
+    # Set scene frame range
+    context.scene.frame_start = frame_start
+    context.scene.frame_end = frame_start + len(cam_files) - 1
+    
+    # Set as active camera
+    if set_active_camera:
+        context.scene.camera = cam_obj
+    
+    # Select the camera
+    bpy.ops.object.select_all(action='DESELECT')
+    cam_obj.select_set(True)
+    context.view_layer.objects.active = cam_obj
+    
+    print(f"Created single animated camera with {len(cam_files)} keyframes")
+    print(f"Frame rate: {fps} FPS")
+    print(f"Frame range: {context.scene.frame_start} - {context.scene.frame_end}")
+    
+    return {'FINISHED'}
+
+
+def import_multiple_cameras(context, cam_files, collection, frame_start, fps, camera_size, animate_cameras, set_active_camera):
+    """Create one camera object per frame (original behavior)."""
+    
     # Create camera objects
     cam_objects = []
 
