@@ -2,38 +2,38 @@ module.exports = {
   version: "5.0",
   menu: async (kernel, info) => {
     /**********************************************************************************************
-    * 
+    *
     * `info` has 4 methods (where `filepath` may be a relative path or an absolute path.):
-    * 
+    *
     *   - info.local(filepath): get the local variable object of a script running at `filepath`. Example:
-    *     
+    *
     *     // get local variables for the currently running start.json script
     *     let local = info.local("start.json")
     *     if (local.url) {
     *       // do something with local.url (the 'url' local variable set inside the start.json script)
     *     }
-    * 
+    *
     *   - info.running(filepath): get the running status of a script at `filepath`. Example:
-    * 
+    *
     *     // check if install.json script is running
     *     let installing = info.running("install.json")
     *     if (installing) {
     *       ...
     *     }
-    * 
+    *
     *   - info.exists(filepath): check if a file exists at `filepath`. Example:
-    * 
+    *
     *     // check if app/venv path exists
     *     let dependency_installed = info.exists("app/venv")
     *     if (dependency_installed) {
     *       ...
     *     }
-    * 
+    *
     *   - info.path(filepath): get the absolute path of a `fileapth`. Example:
-    * 
+    *
     *     // get the install.json absolute path
     *     let absolute_path = info.path("install.json")
-    * 
+    *
     **********************************************************************************************/
     let installed = info.exists("app/venv")
     let running = {
@@ -41,6 +41,8 @@ module.exports = {
       start: info.running("start.json"),
       update: info.running("update.js"),
       reset: info.running("reset.js"),
+      view: info.running("view.js"),
+      viewer: info.running("viewer.js"),
     }
     if (running.install) {
       return [{
@@ -59,6 +61,14 @@ module.exports = {
             text: "Open Web UI",
             href: local.url,
           }, {
+            icon: "fa-solid fa-cube",
+            text: "3D Track Viewer",
+            href: "view.js",
+          }, {
+            icon: "fa-solid fa-upload",
+            text: "External NPZ Viewer",
+            href: "viewer.js",
+          }, {
             icon: 'fa-solid fa-terminal',
             text: "Terminal",
             href: "start.json",
@@ -69,6 +79,14 @@ module.exports = {
             icon: 'fa-solid fa-terminal',
             text: "Terminal",
             href: "start.json",
+          }, {
+            icon: "fa-solid fa-cube",
+            text: "3D Track Viewer",
+            href: "view.js",
+          }, {
+            icon: "fa-solid fa-upload",
+            text: "External NPZ Viewer",
+            href: "viewer.js",
           }]
         }
       } else if (running.update) {
@@ -85,12 +103,62 @@ module.exports = {
           text: "Resetting",
           href: "reset.js",
         }]
+      } else if (running.view) {
+        let local = info.local("view.js")
+        if (local && local.url) {
+          return [{
+            default: true,
+            icon: "fa-solid fa-cube",
+            text: "Open 3D Viewer",
+            href: local.url,
+          }, {
+            icon: 'fa-solid fa-terminal',
+            text: "Terminal",
+            href: "view.js",
+          }]
+        } else {
+          return [{
+            default: true,
+            icon: 'fa-solid fa-terminal',
+            text: "Terminal",
+            href: "view.js",
+          }]
+        }
+      } else if (running.viewer) {
+        let local = info.local("viewer.js")
+        if (local && local.url) {
+          return [{
+            default: true,
+            icon: "fa-solid fa-upload",
+            text: "Open External Viewer",
+            href: local.url,
+          }, {
+            icon: 'fa-solid fa-terminal',
+            text: "Terminal",
+            href: "viewer.js",
+          }]
+        } else {
+          return [{
+            default: true,
+            icon: 'fa-solid fa-terminal',
+            text: "Terminal",
+            href: "viewer.js",
+          }]
+        }
       } else {
         return [{
           default: true,
           icon: "fa-solid fa-power-off",
           text: "Start",
           href: "start.json",
+        }, {
+          icon: "fa-solid fa-cube",
+          text: "3D Track Viewer",
+          href: "view.js",
+        }, {
+          icon: "fa-solid fa-upload",
+          text: "External NPZ Viewer",
+          href: "viewer.js",
         }, {
           icon: "fa-solid fa-plug",
           text: "Update",

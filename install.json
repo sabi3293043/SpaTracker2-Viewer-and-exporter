@@ -32,6 +32,14 @@
           "sageattention": true
         }
       }
+    },
+    {
+      "method": "shell.run",
+      "params": {
+        "message": [
+          "npm install formidable"
+        ]
+      }
     }
   ]
 }

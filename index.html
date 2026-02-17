@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SpaTracker2 3D Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 30px;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(90deg, #00d9ff, #00ff88);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            color: #8892b0;
+            font-size: 1.1rem;
+        }
+
+        .upload-section {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 40px;
+            text-align: center;
+            border: 2px dashed rgba(255,255,255,0.2);
+            transition: all 0.3s ease;
+            margin-bottom: 30px;
+        }
+
+        .upload-section:hover {
+            border-color: #00d9ff;
+            background: rgba(255,255,255,0.08);
+        }
+
+        .upload-section.dragover {
+            border-color: #00ff88;
+            background: rgba(0,255,136,0.1);
+        }
+
+        .upload-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+        }
+
+        .upload-section h2 {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+        }
+
+        .upload-section p {
+            color: #8892b0;
+            margin-bottom: 20px;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            display: inline-block;
+        }
+
+        .file-input-wrapper input[type="file"] {
+            position: absolute;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+
+        .btn {
+            background: linear-gradient(90deg, #00d9ff, #00ff88);
+            color: #1a1a2e;
+            padding: 15px 40px;
+            border: none;
+            border-radius: 30px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-block;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0,217,255,0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status-section {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 30px;
+            display: none;
+        }
+
+        .status-section.active {
+            display: block;
+        }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .status-indicator {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #ffd93d;
+            animation: pulse 1.5s infinite;
+        }
+
+        .status-indicator.success {
+            background: #00ff88;
+            animation: none;
+        }
+
+        .status-indicator.error {
+            background: #ff6b6b;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .progress-bar {
+            flex: 1;
+            height: 8px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00d9ff, #00ff88);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .file-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .info-card {
+            background: rgba(255,255,255,0.05);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .info-card h4 {
+            color: #8892b0;
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+        }
+
+        .info-card p {
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        .viewer-section {
+            background: rgba(0,0,0,0.3);
+            border-radius: 16px;
+            overflow: hidden;
+            display: none;
+        }
+
+        .viewer-section.active {
+            display: block;
+        }
+
+        .viewer-header {
+            background: rgba(255,255,255,0.05);
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .viewer-controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .viewer-controls button {
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .viewer-controls button:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .viewer-frame {
+            width: 100%;
+            height: 700px;
+            border: none;
+        }
+
+        .error-message {
+            background: rgba(255,107,107,0.2);
+            border: 1px solid #ff6b6b;
+            color: #ff6b6b;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+            display: none;
+        }
+
+        .error-message.active {
+            display: block;
+        }
+
+        .instructions {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 30px;
+            margin-top: 30px;
+        }
+
+        .instructions h3 {
+            margin-bottom: 15px;
+            color: #00d9ff;
+        }
+
+        .instructions ol {
+            margin-left: 20px;
+            color: #8892b0;
+            line-height: 1.8;
+        }
+
+        .instructions li {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎯 SpaTracker2 3D Viewer</h1>
+            <p>Interactive 3D visualization for spatial tracking data</p>
+        </header>
+
+        <!-- Upload Section -->
+        <div class="upload-section" id="uploadSection">
+            <div class="upload-icon">📁</div>
+            <h2>Upload Your .npz File</h2>
+            <p>Drag and drop your result.npz file here, or click to browse</p>
+            <div class="file-input-wrapper">
+                <button class="btn">Choose File</button>
+                <input type="file" id="fileInput" accept=".npz">
+            </div>
+            <div class="error-message" id="errorMessage"></div>
+        </div>
+
+        <!-- Status Section -->
+        <div class="status-section" id="statusSection">
+            <div class="status-bar">
+                <div class="status-indicator" id="statusIndicator"></div>
+                <span id="statusText">Processing file...</span>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+            <div class="file-info" id="fileInfo"></div>
+        </div>
+
+        <!-- Viewer Section -->
+        <div class="viewer-section" id="viewerSection">
+            <div class="viewer-header">
+                <h3>3D Visualization</h3>
+                <div class="viewer-controls">
+                    <button onclick="resetView()">🔄 Reset View</button>
+                    <button onclick="toggleFullScreen()">⛶ Full Screen</button>
+                    <button onclick="uploadNew()">📤 Upload New</button>
+                </div>
+            </div>
+            <iframe id="viewerFrame" class="viewer-frame" src="about:blank"></iframe>
+        </div>
+
+        <!-- Instructions -->
+        <div class="instructions">
+            <h3>📖 How to Use</h3>
+            <ol>
+                <li>Run inference using <code>inference.py</code> to generate a <code>result.npz</code> file</li>
+                <li>Upload your <code>.npz</code> file using the upload area above</li>
+                <li>Wait for processing - the file will be converted to a visualization format</li>
+                <li>Interact with the 3D viewer:
+                    <ul>
+                        <li><strong>Left Click + Drag:</strong> Rotate camera</li>
+                        <li><strong>Right Click + Drag:</strong> Pan camera</li>
+                        <li><strong>Scroll:</strong> Zoom in/out</li>
+                        <li><strong>Play/Pause:</strong> Control video playback</li>
+                    </ul>
+                </li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const uploadSection = document.getElementById('uploadSection');
+        const statusSection = document.getElementById('statusSection');
+        const viewerSection = document.getElementById('viewerSection');
+        const statusIndicator = document.getElementById('statusIndicator');
+        const statusText = document.getElementById('statusText');
+        const progressFill = document.getElementById('progressFill');
+        const fileInfo = document.getElementById('fileInfo');
+        const errorMessage = document.getElementById('errorMessage');
+        const viewerFrame = document.getElementById('viewerFrame');
+
+        // Drag and drop handlers
+        uploadSection.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadSection.classList.add('dragover');
+        });
+
+        uploadSection.addEventListener('dragleave', () => {
+            uploadSection.classList.remove('dragover');
+        });
+
+        uploadSection.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadSection.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        async function handleFile(file) {
+            if (!file.name.endsWith('.npz')) {
+                showError('Please upload a .npz file');
+                return;
+            }
+
+            errorMessage.classList.remove('active');
+            statusSection.classList.add('active');
+            statusIndicator.className = 'status-indicator';
+            statusText.textContent = 'Processing file...';
+            progressFill.style.width = '0%';
+            fileInfo.innerHTML = '';
+
+            try {
+                // Step 1: Upload file to server
+                progressFill.style.width = '20%';
+                statusText.textContent = 'Uploading file...';
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const uploadResponse = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!uploadResponse.ok) {
+                    throw new Error('Upload failed: ' + uploadResponse.statusText);
+                }
+
+                const uploadResult = await uploadResponse.json();
+                progressFill.style.width = '50%';
+                statusText.textContent = 'Converting to visualization format...';
+
+                // Step 2: Process the file
+                const processResponse = await fetch('/api/process', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        fileId: uploadResult.fileId
+                    })
+                });
+
+                if (!processResponse.ok) {
+                    throw new Error('Processing failed: ' + processResponse.statusText);
+                }
+
+                const processResult = await processResponse.json();
+                progressFill.style.width = '80%';
+                statusText.textContent = 'Loading viewer...';
+
+                // Display file info
+                if (processResult.metadata) {
+                    const meta = processResult.metadata;
+                    fileInfo.innerHTML = `
+                        <div class="info-card">
+                            <h4>Frames</h4>
+                            <p>${meta.totalFrames || 'N/A'}</p>
+                        </div>
+                        <div class="info-card">
+                            <h4>Resolution</h4>
+                            <p>${meta.resolution?.[0] || 'N/A'} x ${meta.resolution?.[1] || 'N/A'}</p>
+                        </div>
+                        <div class="info-card">
+                            <h4>Trajectory Points</h4>
+                            <p>${meta.numTrajectoryPoints || 'N/A'}</p>
+                        </div>
+                        <div class="info-card">
+                            <h4>Depth Range</h4>
+                            <p>${meta.depthRange?.[0]?.toFixed(2) || 'N/A'} - ${meta.depthRange?.[1]?.toFixed(2) || 'N/A'}m</p>
+                        </div>
+                    `;
+                }
+
+                progressFill.style.width = '100%';
+                statusIndicator.className = 'status-indicator success';
+                statusText.textContent = 'Ready!';
+
+                // Step 3: Load the viewer
+                setTimeout(() => {
+                    statusSection.classList.remove('active');
+                    uploadSection.style.display = 'none';
+                    viewerSection.classList.add('active');
+                    viewerFrame.src = processResult.viewerUrl;
+                }, 500);
+
+            } catch (error) {
+                statusIndicator.className = 'status-indicator error';
+                statusText.textContent = 'Error occurred';
+                showError(error.message);
+                console.error('Error:', error);
+            }
+        }
+
+        function showError(message) {
+            errorMessage.textContent = '❌ ' + message;
+            errorMessage.classList.add('active');
+        }
+
+        function resetView() {
+            viewerFrame.contentWindow.location.reload();
+        }
+
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) {
+                viewerSection.requestFullscreen().catch(err => {
+                    console.error('Error attempting to enable fullscreen:', err);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        function uploadNew() {
+            viewerSection.classList.remove('active');
+            uploadSection.style.display = 'block';
+            statusSection.classList.remove('active');
+            fileInput.value = '';
+            errorMessage.classList.remove('active');
+        }
+    </script>
+</body>
+</html>
