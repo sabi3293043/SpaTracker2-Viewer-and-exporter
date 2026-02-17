@@ -1,0 +1,6 @@
+Looking in indexes: https://pypi.org/simple, https://pypi.ngc.nvidia.com
+Collecting typing-extensions
+  Downloading typing_extensions-4.15.0-py3-none-any.whl (44 kB)
+     -------------------------------------- 44.6/44.6 kB 731.4 kB/s eta 0:00:00
+Installing collected packages: typing-extensions
+Successfully installed typing-extensions-4.15.0
