@@ -329,10 +329,10 @@ function handleExport(req, res) {
   req.on('end', () => {
     try {
       const data = JSON.parse(body)
-      const { fileId, format, fps, scale, colorSource } = data
-      
+      const { fileId, fps, scale, colorSource } = data
+
       const npzFile = path.join(UPLOAD_DIR, `${fileId}.npz`)
-      
+
       if (!fs.existsSync(npzFile)) {
         res.writeHead(404, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ error: 'File not found' }))
@@ -341,8 +341,8 @@ function handleExport(req, res) {
 
       const jobId = crypto.randomBytes(8).toString('hex')
       const exportDir = path.join(EXPORT_DIR, jobId)
-      const plyDir = path.join(exportDir, 'ply_files')
-      
+      const plyDir = path.join(exportDir, 'exported_frames')
+
       fs.mkdirSync(exportDir, { recursive: true })
       fs.mkdirSync(plyDir, { recursive: true })
 
@@ -353,7 +353,6 @@ function handleExport(req, res) {
         message: 'Starting export...',
         jobId: jobId,
         fileId: fileId,
-        format: format,
         fps: fps,
         scale: scale,
         colorSource: colorSource,
@@ -427,30 +426,40 @@ function handleExport(req, res) {
           })
 
           archive.pipe(output)
-          archive.directory(plyDir, 'ply_files')
+          
+          // Add trajectory and pointcloud folders
+          const trajectoryPath = path.join(plyDir, 'trajectory')
+          const pointcloudPath = path.join(plyDir, 'pointcloud')
+          
+          if (fs.existsSync(trajectoryPath)) {
+            archive.directory(trajectoryPath, 'trajectory')
+          }
+          if (fs.existsSync(pointcloudPath)) {
+            archive.directory(pointcloudPath, 'pointcloud')
+          }
           
           // Add Blender import script
           const blenderScript = path.join(__dirname, 'blender_addon', 'import_spatracker2_ply.py')
           if (fs.existsSync(blenderScript)) {
             archive.file(blenderScript, { name: 'import_spatracker2_ply.py' })
           }
-          
+
           // Add README
           const readmePath = path.join(exportDir, 'README.txt')
-          fs.writeFileSync(readmePath, 
+          fs.writeFileSync(readmePath,
 `SpaTracker2 PLY Export
 ======================
 
-This folder contains animated 3D point tracking data exported from SpaTracker2.
+This folder contains animated 3D data exported from SpaTracker2.
 
-Files:
-- ply_files/: Sequence of PLY files (one per frame)
-- import_spatracker2_ply.py: Blender import script
+Folders:
+- trajectory/: Sparse trajectory points (tracked features)
+- pointcloud/: Dense point cloud from depth maps
 
 To import in Blender:
 1. Open Blender
 2. Go to File > Import > SpaTracker2 PLY Sequence (.ply)
-3. Navigate to the ply_files folder
+3. Navigate to the trajectory or pointcloud folder
 4. Select the first PLY file (frame_000000.ply)
 5. Click "Import"
 
@@ -465,7 +474,7 @@ Scale: ${scale}x
 Color Source: ${colorSource}
 `)
           archive.file(readmePath, { name: 'README.txt' })
-          
+
           archive.finalize()
         } else {
           job.status = 'error'

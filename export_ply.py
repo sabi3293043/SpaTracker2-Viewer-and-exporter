@@ -2,7 +2,7 @@
 SpaTracker2 PLY Export Script
 
 Exports NPZ tracking data to animated PLY sequence with vertex colors.
-Each frame is exported as a separate PLY file.
+Exports both trajectory points and dense point cloud from depth.
 
 Usage:
     python export_ply.py <npz_file> <output_dir> [--fps <fps>] [--scale <scale>] [--color <source>]
@@ -68,9 +68,76 @@ def depth_to_color(depth, min_depth, max_depth):
     return np.stack([r * 255, g * 255, b * 255], axis=-1).astype(np.uint8)
 
 
+def depth_to_point_cloud(depth, intrinsics, color_source='video', video_frame=None, scale=1.0):
+    """
+    Convert depth map to 3D point cloud with colors.
+    
+    Args:
+        depth: HxW depth map
+        intrinsics: 3x3 camera intrinsics
+        color_source: 'video', 'depth', or 'white'
+        video_frame: Optional video frame for color
+        scale: Scale factor
+    
+    Returns:
+        vertices: Nx3 array of 3D points
+        colors: Nx3 array of RGB colors
+    """
+    H, W = depth.shape
+    fx, fy = intrinsics[0, 0], intrinsics[1, 1]
+    cx, cy = intrinsics[0, 2], intrinsics[1, 2]
+    
+    # Create pixel grid
+    y, x = np.indices((H, W))
+    
+    # Filter out zero depths
+    valid_mask = depth > 0
+    valid_count = valid_mask.sum()
+    
+    if valid_count == 0:
+        return np.array([]).reshape(0, 3), np.array([]).reshape(0, 3)
+    
+    # Get valid pixels
+    x_valid = x[valid_mask]
+    y_valid = y[valid_mask]
+    z_valid = depth[valid_mask]
+    
+    # Convert to 3D coordinates (camera space)
+    X = (x_valid - cx) * z_valid / fx
+    Y = (y_valid - cy) * z_valid / fy
+    Z = z_valid
+    
+    # Stack and scale
+    vertices = np.stack([X, Y, Z], axis=-1) * scale
+    
+    # Get colors
+    if color_source == 'video' and video_frame is not None:
+        # Sample color from video frame
+        if video_frame.max() <= 1.0:
+            video_frame = (video_frame * 255).astype(np.uint8)
+        
+        # Handle different video frame formats
+        if video_frame.ndim == 3:  # H, W, C or C, H, W
+            if video_frame.shape[0] == 3:  # C, H, W
+                colors = video_frame[:, y_valid, x_valid].T
+            else:  # H, W, C
+                colors = video_frame[y_valid, x_valid]
+        else:
+            colors = np.ones((valid_count, 3), dtype=np.uint8) * 255
+    elif color_source == 'depth':
+        # Use depth-based coloring
+        colors = depth_to_color(z_valid, depth[valid_mask].min(), depth[valid_mask].max())
+    else:
+        # White points
+        colors = np.ones((valid_count, 3), dtype=np.uint8) * 255
+    
+    return vertices, colors
+
+
 def export_ply_sequence(npz_path, output_dir, fps=30, scale=1.0, color_source='video'):
     """
     Export NPZ data to PLY sequence.
+    Exports both trajectory points and dense point clouds.
     
     Args:
         npz_path: Path to input NPZ file
@@ -83,75 +150,113 @@ def export_ply_sequence(npz_path, output_dir, fps=30, scale=1.0, color_source='v
     data = np.load(npz_path)
     
     # Extract data
-    coords = data.get('coords', None)
+    coords = data.get('coords', None)  # Trajectory points
     video = data.get('video', None)
     depths = data.get('depths', None)
+    intrinsics = data.get('intrinsics', None)
     visibs = data.get('visibs', None)
     
-    if coords is None:
-        raise ValueError("NPZ file missing 'coords' array")
+    if depths is None and coords is None:
+        raise ValueError("NPZ file missing both 'coords' and 'depths' arrays")
     
-    T, N, _ = coords.shape
-    print(f"Found {T} frames with {N} trajectory points")
+    # Determine number of frames
+    if depths is not None:
+        T = depths.shape[0]
+    else:
+        T = coords.shape[0]
     
-    # Prepare output directory
+    print(f"Found {T} frames")
+    
+    # Process output directories
     output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    trajectory_dir = output_dir / 'trajectory'
+    pointcloud_dir = output_dir / 'pointcloud'
     
-    # Process video for colors if needed
+    trajectory_dir.mkdir(parents=True, exist_ok=True)
+    pointcloud_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Prepare video colors if needed
+    video_colors = None
     if color_source == 'video' and video is not None:
-        print("Extracting colors from video...")
-        # Video is (T, C, H, W), need to sample at trajectory projected positions
-        # For simplicity, we'll use the mean color per frame
+        print("Processing video frames...")
         video_colors = []
         for t in range(T):
             frame = video[t]
             if frame.max() <= 1.0:
                 frame = (frame * 255).astype(np.uint8)
-            # Get average color
-            avg_color = frame.mean(axis=(1, 2)).astype(np.uint8)
-            video_colors.append(avg_color)
-        video_colors = np.array(video_colors)  # (T, 3)
+            # Reshape to H, W, C if needed
+            if frame.ndim == 3 and frame.shape[0] == 3:
+                frame = np.transpose(frame, (1, 2, 0))
+            video_colors.append(frame)
     
-    # Process depth for colors if needed
-    if color_source == 'depth' and depths is not None:
-        print("Extracting colors from depth...")
-        min_d = depths.min()
-        max_d = depths.max()
-    
-    # Export each frame
-    print(f"Exporting {T} frames to {output_dir}...")
-    
-    for t in range(T):
-        # Get coordinates for this frame
-        frame_coords = coords[t] * scale
-        
-        # Get colors
-        if color_source == 'video' and video is not None:
-            # Use the same color for all points in this frame
-            colors = np.tile(video_colors[t], (N, 1))
-        elif color_source == 'depth' and depths is not None:
-            # Sample depth at trajectory points and convert to color
-            # For simplicity, use Z coordinate for depth coloring
-            frame_colors = depth_to_color(frame_coords[:, 2], min_d * scale, max_d * scale)
-            colors = frame_colors
+    # Get intrinsics
+    if intrinsics is not None:
+        if intrinsics.ndim == 3:
+            intr = intrinsics[0] if intrinsics.shape[0] == 1 else intrinsics[0]
         else:
-            # White points
-            colors = np.ones((N, 3), dtype=np.uint8) * 255
+            intr = intrinsics
+    else:
+        # Default intrinsics
+        intr = np.array([[256, 0, 128], [0, 256, 96], [0, 0, 1]])
+    
+    # Export trajectory points
+    if coords is not None:
+        N = coords.shape[1]
+        print(f"Exporting {T} frames of trajectory ({N} points per frame)...")
         
-        # Apply visibility mask if available
-        if visibs is not None:
-            vis_mask = visibs[t] > 0.5
-            frame_coords = frame_coords[vis_mask]
-            colors = colors[vis_mask]
+        for t in range(T):
+            frame_coords = coords[t] * scale
+            
+            # Get colors
+            if color_source == 'video' and video_colors is not None:
+                # Use average color from video frame
+                avg_color = video_colors[t].mean(axis=(0, 1)).astype(np.uint8)
+                colors = np.tile(avg_color, (N, 1))
+            elif color_source == 'depth':
+                frame_colors = depth_to_color(frame_coords[:, 2], coords[:,:,2].min()*scale, coords[:,:,2].max()*scale)
+                colors = frame_colors
+            else:
+                colors = np.ones((N, 3), dtype=np.uint8) * 255
+            
+            # Apply visibility mask if available
+            if visibs is not None:
+                vis_mask = visibs[t].flatten() > 0.5
+                if len(vis_mask) == len(frame_coords):
+                    frame_coords = frame_coords[vis_mask]
+                    colors = colors[vis_mask]
+            
+            # Write PLY file
+            ply_path = trajectory_dir / f"frame_{t:06d}.ply"
+            write_ply_with_colors(ply_path, frame_coords, colors)
+            
+            progress = int((t + 1) / T * 50)
+            print(f"Trajectory Progress: {progress}%")
+    
+    # Export dense point clouds from depth
+    if depths is not None:
+        print(f"Exporting {T} frames of dense point cloud...")
         
-        # Write PLY file
-        ply_path = output_dir / f"frame_{t:06d}.ply"
-        write_ply_with_colors(ply_path, frame_coords, colors)
-        
-        # Progress
-        progress = int((t + 1) / T * 100)
-        print(f"Progress: {progress}%")
+        for t in range(T):
+            depth_frame = depths[t]
+            
+            # Get video frame for color
+            video_frame = video_colors[t] if video_colors is not None else None
+            
+            # Convert depth to point cloud
+            vertices, colors = depth_to_point_cloud(
+                depth_frame, intr, 
+                color_source=color_source, 
+                video_frame=video_frame,
+                scale=scale
+            )
+            
+            if len(vertices) > 0:
+                # Write PLY file
+                ply_path = pointcloud_dir / f"frame_{t:06d}.ply"
+                write_ply_with_colors(ply_path, vertices, colors)
+            
+            progress = 50 + int((t + 1) / T * 50)
+            print(f"Point Cloud Progress: {progress}%")
     
     data.close()
     
@@ -161,15 +266,19 @@ def export_ply_sequence(npz_path, output_dir, fps=30, scale=1.0, color_source='v
         'scale': scale,
         'color_source': color_source,
         'total_frames': T,
-        'num_points': N,
         'export_time': datetime.now().isoformat()
     }
+    
+    if coords is not None:
+        metadata['trajectory_points'] = coords.shape[1]
     
     import json
     with open(output_dir / 'metadata.json', 'w') as f:
         json.dump(metadata, f, indent=2)
     
-    print(f"Export complete! {T} PLY files saved to {output_dir}")
+    print(f"Export complete! PLY files saved to {output_dir}")
+    print(f"  - Trajectory: {trajectory_dir}")
+    print(f"  - Point Cloud: {pointcloud_dir}")
 
 
 def main():

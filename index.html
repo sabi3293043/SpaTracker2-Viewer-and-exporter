@@ -425,14 +425,9 @@
             <div class="export-modal-content">
                 <h3>💾 Export Animation for Blender</h3>
                 <p style="color: #8892b0; margin-bottom: 20px;">
-                    Export animated 3D points with color information as a PLY sequence that can be imported into Blender.
+                    Export animated 3D data as PLY sequence with vertex colors for Blender import.
+                    Includes both sparse trajectory points and dense point cloud from depth.
                 </p>
-                
-                <label for="exportFormat">Format</label>
-                <select id="exportFormat">
-                    <option value="ply_seq">PLY Sequence (per frame)</option>
-                    <option value="abc">Alembic (.abc) - Coming Soon</option>
-                </select>
 
                 <label for="exportFrameRate">Frame Rate (FPS)</label>
                 <input type="number" id="exportFrameRate" value="30" min="1" max="120">
@@ -446,6 +441,15 @@
                     <option value="depth">From Depth (Heatmap)</option>
                     <option value="white">White Points</option>
                 </select>
+
+                <div style="background: rgba(0,217,255,0.1); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <p style="color: #00d9ff; font-size: 14px; margin: 0 0 10px 0;">📦 Export includes:</p>
+                    <ul style="color: #8892b0; margin: 0; padding-left: 20px; font-size: 13px;">
+                        <li><strong>trajectory/</strong> - Sparse tracked feature points</li>
+                        <li><strong>pointcloud/</strong> - Dense depth-based point cloud</li>
+                        <li><strong>import_spatracker2_ply.py</strong> - Blender import script</li>
+                    </ul>
+                </div>
 
                 <div class="export-progress" id="exportProgress">
                     <div class="status-bar">
@@ -656,7 +660,6 @@
         }
 
         async function startExport() {
-            const format = document.getElementById('exportFormat').value;
             const fps = parseInt(document.getElementById('exportFrameRate').value);
             const scale = parseFloat(document.getElementById('exportScale').value);
             const colorSource = document.getElementById('exportColor').value;
