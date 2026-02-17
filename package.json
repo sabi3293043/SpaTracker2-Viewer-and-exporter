@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "archiver": "^7.0.1",
     "formidable": "^3.5.4"
   }
 }

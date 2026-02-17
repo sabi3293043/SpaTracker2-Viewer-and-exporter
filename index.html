@@ -236,6 +236,102 @@
             background: rgba(255,255,255,0.2);
         }
 
+        .viewer-controls button.export-btn {
+            background: linear-gradient(90deg, #00d9ff, #00ff88);
+            color: #1a1a2e;
+            font-weight: bold;
+        }
+
+        .viewer-controls button.export-btn:hover {
+            background: linear-gradient(90deg, #00ff88, #00d9ff);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,255,136,0.3);
+        }
+
+        .export-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .export-modal.active {
+            display: flex;
+        }
+
+        .export-modal-content {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-radius: 16px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .export-modal h3 {
+            color: #00d9ff;
+            margin-bottom: 20px;
+        }
+
+        .export-modal label {
+            display: block;
+            margin-bottom: 8px;
+            color: #8892b0;
+        }
+
+        .export-modal select,
+        .export-modal input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.05);
+            color: #fff;
+            font-size: 14px;
+        }
+
+        .export-modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .export-modal-buttons button {
+            flex: 1;
+            padding: 12px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        .export-modal-buttons .btn-cancel {
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+        }
+
+        .export-modal-buttons .btn-export {
+            background: linear-gradient(90deg, #00d9ff, #00ff88);
+            color: #1a1a2e;
+        }
+
+        .export-progress {
+            margin-top: 20px;
+            display: none;
+        }
+
+        .export-progress.active {
+            display: block;
+        }
+
         .viewer-frame {
             width: 100%;
             height: 700px;
@@ -317,10 +413,55 @@
                 <div class="viewer-controls">
                     <button onclick="resetView()">🔄 Reset View</button>
                     <button onclick="toggleFullScreen()">⛶ Full Screen</button>
+                    <button onclick="showExportModal()" class="export-btn">💾 Export to Blender</button>
                     <button onclick="uploadNew()">📤 Upload New</button>
                 </div>
             </div>
             <iframe id="viewerFrame" class="viewer-frame" src="about:blank"></iframe>
+        </div>
+
+        <!-- Export Modal -->
+        <div class="export-modal" id="exportModal">
+            <div class="export-modal-content">
+                <h3>💾 Export Animation for Blender</h3>
+                <p style="color: #8892b0; margin-bottom: 20px;">
+                    Export animated 3D points with color information as a PLY sequence that can be imported into Blender.
+                </p>
+                
+                <label for="exportFormat">Format</label>
+                <select id="exportFormat">
+                    <option value="ply_seq">PLY Sequence (per frame)</option>
+                    <option value="abc">Alembic (.abc) - Coming Soon</option>
+                </select>
+
+                <label for="exportFrameRate">Frame Rate (FPS)</label>
+                <input type="number" id="exportFrameRate" value="30" min="1" max="120">
+
+                <label for="exportScale">Scale</label>
+                <input type="number" id="exportScale" value="1.0" step="0.1" min="0.1" max="10.0">
+
+                <label for="exportColor">Color Source</label>
+                <select id="exportColor">
+                    <option value="video">From Video (RGB)</option>
+                    <option value="depth">From Depth (Heatmap)</option>
+                    <option value="white">White Points</option>
+                </select>
+
+                <div class="export-progress" id="exportProgress">
+                    <div class="status-bar">
+                        <div class="status-indicator" id="exportStatusIndicator"></div>
+                        <span id="exportStatusText">Preparing export...</span>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="exportProgressFill"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="export-modal-buttons">
+                    <button class="btn-cancel" onclick="hideExportModal()">Cancel</button>
+                    <button class="btn-export" onclick="startExport()">Export</button>
+                </div>
+            </div>
         </div>
 
         <!-- Instructions -->
@@ -500,6 +641,112 @@
             statusSection.classList.remove('active');
             fileInput.value = '';
             errorMessage.classList.remove('active');
+        }
+
+        // Export Modal Functions
+        let currentFileId = null;
+
+        function showExportModal() {
+            document.getElementById('exportModal').classList.add('active');
+        }
+
+        function hideExportModal() {
+            document.getElementById('exportModal').classList.remove('active');
+            document.getElementById('exportProgress').classList.remove('active');
+        }
+
+        async function startExport() {
+            const format = document.getElementById('exportFormat').value;
+            const fps = parseInt(document.getElementById('exportFrameRate').value);
+            const scale = parseFloat(document.getElementById('exportScale').value);
+            const colorSource = document.getElementById('exportColor').value;
+
+            // Get the current file ID from the viewer URL
+            const viewerUrl = viewerFrame.src;
+            const fileIdMatch = viewerUrl.match(/\/viewer\/([a-f0-9]+)/);
+            if (!fileIdMatch) {
+                alert('No file loaded. Please upload a file first.');
+                return;
+            }
+            currentFileId = fileIdMatch[1];
+
+            // Show progress
+            document.getElementById('exportProgress').classList.add('active');
+            const statusIndicator = document.getElementById('exportStatusIndicator');
+            const statusText = document.getElementById('exportStatusText');
+            const progressFill = document.getElementById('exportProgressFill');
+
+            statusIndicator.className = 'status-indicator';
+            statusText.textContent = 'Starting export...';
+            progressFill.style.width = '0%';
+
+            try {
+                // Step 1: Start export job
+                progressFill.style.width = '20%';
+                statusText.textContent = 'Processing frames...';
+
+                const exportResponse = await fetch('/api/export', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        fileId: currentFileId,
+                        format: format,
+                        fps: fps,
+                        scale: scale,
+                        colorSource: colorSource
+                    })
+                });
+
+                if (!exportResponse.ok) {
+                    throw new Error('Export failed: ' + exportResponse.statusText);
+                }
+
+                const exportResult = await exportResponse.json();
+                
+                // Step 2: Poll for completion
+                progressFill.style.width = '50%';
+                statusText.textContent = 'Generating PLY files...';
+
+                const jobId = exportResult.jobId;
+                let completed = false;
+                
+                while (!completed) {
+                    const statusResponse = await fetch(`/api/export/status?id=${jobId}`);
+                    const status = await statusResponse.json();
+                    
+                    if (status.status === 'complete') {
+                        completed = true;
+                        progressFill.style.width = '100%';
+                        statusIndicator.className = 'status-indicator success';
+                        statusText.textContent = 'Export complete!';
+                        
+                        // Download the zip file
+                        window.location.href = `/api/export/download?id=${jobId}`;
+                        
+                        setTimeout(() => {
+                            hideExportModal();
+                            alert('Export complete! The ZIP file should start downloading.\n\nTo import in Blender:\n1. Extract the ZIP file\n2. Run the import_spatracker2_ply.py script in Blender\n3. Select the folder with PLY files');
+                        }, 500);
+                        
+                    } else if (status.status === 'error') {
+                        throw new Error(status.message || 'Export failed');
+                    } else {
+                        // Update progress
+                        const progress = status.progress || 50;
+                        progressFill.style.width = progress + '%';
+                        statusText.textContent = status.message || 'Processing...';
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
+                }
+
+            } catch (error) {
+                statusIndicator.className = 'status-indicator error';
+                statusText.textContent = 'Export failed';
+                alert('Export failed: ' + error.message);
+                console.error('Export error:', error);
+            }
         }
     </script>
 </body>

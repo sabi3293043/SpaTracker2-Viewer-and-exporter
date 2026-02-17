@@ -4,10 +4,12 @@ const path = require('path')
 const { formidable } = require('formidable')
 const { spawn } = require('child_process')
 const crypto = require('crypto')
+const archiver = require('archiver')
 
 const PORT = process.argv[2] || 8080
 const UPLOAD_DIR = path.join(__dirname, 'uploads')
 const PROCESSED_DIR = path.join(__dirname, 'processed')
+const EXPORT_DIR = path.join(__dirname, 'exports')
 
 // Ensure directories exist
 if (!fs.existsSync(UPLOAD_DIR)) {
@@ -16,9 +18,13 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 if (!fs.existsSync(PROCESSED_DIR)) {
   fs.mkdirSync(PROCESSED_DIR, { recursive: true })
 }
+if (!fs.existsSync(EXPORT_DIR)) {
+  fs.mkdirSync(EXPORT_DIR, { recursive: true })
+}
 
-// Store processing status
+// Store processing and export status
 const processingStatus = new Map()
+const exportJobs = new Map()
 
 const mimeTypes = {
   '.html': 'text/html',
@@ -93,6 +99,48 @@ const server = http.createServer((req, res) => {
     } else {
       res.writeHead(404)
       res.end(JSON.stringify({ error: 'Task not found' }))
+    }
+    return
+  }
+
+  // Export endpoints
+  if (req.method === 'POST' && req.url === '/api/export') {
+    handleExport(req, res)
+    return
+  }
+
+  if (req.method === 'GET' && req.url.startsWith('/api/export/status')) {
+    const urlParams = new URL(req.url, `http://localhost:${PORT}`)
+    const jobId = urlParams.searchParams.get('id')
+    if (jobId && exportJobs.has(jobId)) {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(exportJobs.get(jobId)))
+    } else {
+      res.writeHead(404)
+      res.end(JSON.stringify({ error: 'Job not found' }))
+    }
+    return
+  }
+
+  if (req.method === 'GET' && req.url.startsWith('/api/export/download')) {
+    const urlParams = new URL(req.url, `http://localhost:${PORT}`)
+    const jobId = urlParams.searchParams.get('id')
+    if (jobId && exportJobs.has(jobId)) {
+      const job = exportJobs.get(jobId)
+      if (job.status === 'complete' && job.zipPath && fs.existsSync(job.zipPath)) {
+        res.writeHead(200, {
+          'Content-Type': 'application/zip',
+          'Content-Disposition': `attachment; filename="spatracker2_export_${jobId}.zip"`
+        })
+        const fileStream = fs.createReadStream(job.zipPath)
+        fileStream.pipe(res)
+      } else {
+        res.writeHead(404)
+        res.end(JSON.stringify({ error: 'Export not ready' }))
+      }
+    } else {
+      res.writeHead(404)
+      res.end(JSON.stringify({ error: 'Job not found' }))
     }
     return
   }
@@ -267,6 +315,167 @@ function handleProcess(req, res) {
           })
         }
       }, 1000)
+
+    } catch (error) {
+      res.writeHead(500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: error.message }))
+    }
+  })
+}
+
+function handleExport(req, res) {
+  let body = ''
+  req.on('data', chunk => { body += chunk })
+  req.on('end', () => {
+    try {
+      const data = JSON.parse(body)
+      const { fileId, format, fps, scale, colorSource } = data
+      
+      const npzFile = path.join(UPLOAD_DIR, `${fileId}.npz`)
+      
+      if (!fs.existsSync(npzFile)) {
+        res.writeHead(404, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'File not found' }))
+        return
+      }
+
+      const jobId = crypto.randomBytes(8).toString('hex')
+      const exportDir = path.join(EXPORT_DIR, jobId)
+      const plyDir = path.join(exportDir, 'ply_files')
+      
+      fs.mkdirSync(exportDir, { recursive: true })
+      fs.mkdirSync(plyDir, { recursive: true })
+
+      // Store job info
+      exportJobs.set(jobId, {
+        status: 'processing',
+        progress: 0,
+        message: 'Starting export...',
+        jobId: jobId,
+        fileId: fileId,
+        format: format,
+        fps: fps,
+        scale: scale,
+        colorSource: colorSource,
+        exportDir: exportDir,
+        plyDir: plyDir
+      })
+
+      // Use the venv Python executable
+      const pythonExe = process.platform === 'win32' 
+        ? path.join(__dirname, 'app', 'venv', 'Scripts', 'python.exe')
+        : path.join(__dirname, 'app', 'venv', 'bin', 'python')
+      
+      // Export script path
+      const exportScript = path.join(__dirname, 'export_ply.py')
+      
+      const pythonProcess = spawn(pythonExe, [
+        exportScript,
+        npzFile,
+        plyDir,
+        '--fps', fps.toString(),
+        '--scale', scale.toString(),
+        '--color', colorSource
+      ], {
+        cwd: __dirname
+      })
+
+      let stderr = ''
+      pythonProcess.stderr.on('data', (data) => {
+        stderr += data.toString()
+        console.log('Export stderr:', data.toString())
+        
+        // Update progress from stderr messages
+        const job = exportJobs.get(jobId)
+        if (job) {
+          job.message = data.toString().trim()
+        }
+      })
+
+      pythonProcess.stdout.on('data', (data) => {
+        console.log('Export stdout:', data.toString())
+        const job = exportJobs.get(jobId)
+        if (job) {
+          const match = data.toString().match(/Progress: (\d+)%/)
+          if (match) {
+            job.progress = parseInt(match[1])
+            job.message = `Exporting frame ${job.progress}%`
+          }
+        }
+      })
+
+      pythonProcess.on('close', (code) => {
+        const job = exportJobs.get(jobId)
+        if (code === 0) {
+          // Create ZIP file
+          const zipPath = path.join(exportDir, `spatracker2_export_${jobId}.zip`)
+          const output = fs.createWriteStream(zipPath)
+          const archive = archiver('zip', { zlib: { level: 9 } })
+
+          output.on('close', () => {
+            job.status = 'complete'
+            job.progress = 100
+            job.message = 'Export complete!'
+            job.zipPath = zipPath
+            console.log(`Export complete: ${zipPath}`)
+          })
+
+          archive.on('error', (err) => {
+            job.status = 'error'
+            job.message = 'Failed to create ZIP'
+            console.error('ZIP error:', err)
+          })
+
+          archive.pipe(output)
+          archive.directory(plyDir, 'ply_files')
+          
+          // Add Blender import script
+          const blenderScript = path.join(__dirname, 'blender_addon', 'import_spatracker2_ply.py')
+          if (fs.existsSync(blenderScript)) {
+            archive.file(blenderScript, { name: 'import_spatracker2_ply.py' })
+          }
+          
+          // Add README
+          const readmePath = path.join(exportDir, 'README.txt')
+          fs.writeFileSync(readmePath, 
+`SpaTracker2 PLY Export
+======================
+
+This folder contains animated 3D point tracking data exported from SpaTracker2.
+
+Files:
+- ply_files/: Sequence of PLY files (one per frame)
+- import_spatracker2_ply.py: Blender import script
+
+To import in Blender:
+1. Open Blender
+2. Go to File > Import > SpaTracker2 PLY Sequence (.ply)
+3. Navigate to the ply_files folder
+4. Select the first PLY file (frame_000000.ply)
+5. Click "Import"
+
+The importer will automatically:
+- Load all PLY files in sequence
+- Create point cloud objects with vertex colors
+- Set up animation keyframes
+- Match the original frame rate (${fps} FPS)
+
+Frame Rate: ${fps} FPS
+Scale: ${scale}x
+Color Source: ${colorSource}
+`)
+          archive.file(readmePath, { name: 'README.txt' })
+          
+          archive.finalize()
+        } else {
+          job.status = 'error'
+          job.message = stderr || 'Export failed'
+          console.error('Export failed:', stderr)
+        }
+      })
+
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ success: true, jobId: jobId }))
 
     } catch (error) {
       res.writeHead(500, { 'Content-Type': 'application/json' })
