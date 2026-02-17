@@ -442,10 +442,15 @@ function handleExport(req, res) {
             archive.directory(camerasPath, 'cameras')
           }
 
-          // Add Blender import script
-          const blenderScript = path.join(__dirname, 'blender_addon', 'import_spatracker2_ply.py')
-          if (fs.existsSync(blenderScript)) {
-            archive.file(blenderScript, { name: 'import_spatracker2_ply.py' })
+          // Add Blender import scripts
+          const plyImportScript = path.join(__dirname, 'blender_addon', 'import_spatracker2_ply.py')
+          if (fs.existsSync(plyImportScript)) {
+            archive.file(plyImportScript, { name: 'import_spatracker2_ply.py' })
+          }
+          
+          const camImportScript = path.join(__dirname, 'blender_addon', 'import_spatracker2_cameras.py')
+          if (fs.existsSync(camImportScript)) {
+            archive.file(camImportScript, { name: 'import_spatracker2_cameras.py' })
           }
 
           // Add README
@@ -462,15 +467,24 @@ Folders:
 - cameras/: Camera pose data for each frame (JSON)
 
 To import in Blender:
+
+**Option 1: Import Points (PLY Sequence)**
 1. Open Blender
 2. Go to File > Import > SpaTracker2 PLY Sequence (.ply)
 3. Navigate to the trajectory or pointcloud folder
 4. Select the first PLY file (frame_000000.ply)
 5. Click "Import"
 
-The importer will automatically:
-- Load all PLY files in sequence
-- Create point cloud objects with vertex colors
+**Option 2: Import Cameras Only**
+1. Open Blender
+2. Go to File > Import > SpaTracker2 Camera Sequence (.json)
+3. Navigate to the cameras folder
+4. Select any camera JSON file
+5. Click "Import"
+
+The importers will automatically:
+- Load all files in sequence
+- Create objects with vertex colors (for points)
 - Set up animation keyframes
 - Match the original frame rate (${fps} FPS)
 
