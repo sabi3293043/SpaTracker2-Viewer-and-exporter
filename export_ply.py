@@ -19,6 +19,7 @@ import numpy as np
 import argparse
 import os
 import json
+import cv2
 from pathlib import Path
 from datetime import datetime
 
@@ -287,6 +288,37 @@ def export_ply_sequence(npz_path, output_dir, fps=30, scale=1.0, color_source='v
             progress = int((t + 1) / T * 100)
             print(f"Camera Progress: {progress}%")
 
+    # Export video as MP4
+    if video is not None:
+        print(f"Exporting video ({T} frames)...")
+        video_path = output_dir / 'video.mp4'
+        
+        T, C, H, W = video.shape
+        
+        # Create video writer
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(str(video_path), fourcc, fps, (W, H))
+        
+        for t in range(T):
+            frame = video[t]
+            
+            # Convert to uint8 if needed
+            if frame.max() <= 1.0:
+                frame = (frame * 255).astype(np.uint8)
+            
+            # Transpose from C,H,W to H,W,C if needed
+            if frame.ndim == 3 and frame.shape[0] == 3:
+                frame = np.transpose(frame, (1, 2, 0))
+            
+            # Convert RGB to BGR for OpenCV
+            if frame.shape[2] == 3:
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            
+            out.write(frame)
+        
+        out.release()
+        print(f"  Video saved to: {video_path}")
+
     data.close()
     
     # Write metadata
@@ -303,6 +335,9 @@ def export_ply_sequence(npz_path, output_dir, fps=30, scale=1.0, color_source='v
 
     if extrinsics is not None:
         metadata['has_cameras'] = True
+    
+    if video is not None:
+        metadata['has_video'] = True
 
     with open(output_dir / 'metadata.json', 'w') as f:
         json.dump(metadata, f, indent=2)
@@ -311,6 +346,8 @@ def export_ply_sequence(npz_path, output_dir, fps=30, scale=1.0, color_source='v
     print(f"  - Trajectory: {trajectory_dir}")
     print(f"  - Point Cloud: {pointcloud_dir}")
     print(f"  - Cameras: {cameras_dir}")
+    if video is not None:
+        print(f"  - Video: video.mp4")
 
 
 def main():

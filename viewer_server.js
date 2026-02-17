@@ -441,6 +441,12 @@ function handleExport(req, res) {
           if (fs.existsSync(camerasPath)) {
             archive.directory(camerasPath, 'cameras')
           }
+          
+          // Add video file if exists
+          const videoPath = path.join(plyDir, 'video.mp4')
+          if (fs.existsSync(videoPath)) {
+            archive.file(videoPath, { name: 'video.mp4' })
+          }
 
           // Add Blender import scripts
           const plyImportScript = path.join(__dirname, 'blender_addon', 'import_spatracker2_ply.py')
@@ -465,6 +471,7 @@ Folders:
 - trajectory/: Sparse trajectory points (tracked features)
 - pointcloud/: Dense point cloud from depth maps
 - cameras/: Camera pose data for each frame (JSON)
+- video.mp4: Original video sequence (MP4)
 
 To import in Blender:
 
