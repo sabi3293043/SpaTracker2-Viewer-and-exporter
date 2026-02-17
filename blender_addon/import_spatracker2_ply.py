@@ -75,6 +75,20 @@ class ImportSpaTracker2PLY(bpy.types.Operator, ImportHelper):
         max=1.0
     )
 
+    import_cameras: BoolProperty(
+        name="Import Cameras",
+        description="Import camera objects from cameras folder",
+        default=True
+    )
+
+    camera_size: FloatProperty(
+        name="Camera Size",
+        description="Size of camera visualization",
+        default=0.1,
+        min=0.001,
+        max=10.0
+    )
+
     def draw(self, context):
         layout = self.layout
         layout.use_property_split = True
@@ -84,10 +98,14 @@ class ImportSpaTracker2PLY(bpy.types.Operator, ImportHelper):
         col.prop(self, "frame_start")
         col.prop(self, "scale")
         col.prop(self, "use_vertex_colors")
+        col.prop(self, "import_cameras")
         col.prop(self, "create_particles")
-        
+
         if self.create_particles:
             col.prop(self, "point_size")
+        
+        if self.import_cameras:
+            col.prop(self, "camera_size")
 
     def execute(self, context):
         try:
@@ -98,7 +116,9 @@ class ImportSpaTracker2PLY(bpy.types.Operator, ImportHelper):
                 scale=self.scale,
                 use_vertex_colors=self.use_vertex_colors,
                 create_particles=self.create_particles,
-                point_size=self.point_size
+                point_size=self.point_size,
+                import_cameras=self.import_cameras,
+                camera_size=self.camera_size
             )
         except Exception as e:
             self.report({'ERROR'}, f"Error importing: {str(e)}")
@@ -201,33 +221,129 @@ def load_metadata(folder):
     return None
 
 
-def import_ply_sequence(context, filepath, frame_start=1, scale=1.0, 
-                        use_vertex_colors=True, create_particles=False, 
-                        point_size=0.01):
-    """Main import function."""
+def import_cameras_from_folder(context, cameras_folder, frame_start, fps, camera_size, parent_collection):
+    """Import camera objects from JSON files."""
+    import mathutils
     
+    # Create camera collection
+    cam_collection = bpy.data.collections.new("Cameras")
+    parent_collection.children.link(cam_collection)
+    
+    # Find all camera JSON files
+    cam_files = sorted(cameras_folder.glob("camera_*.json"))
+    
+    if not cam_files:
+        print("  No camera files found")
+        return
+    
+    print(f"Importing {len(cam_files)} cameras...")
+    
+    # Create camera objects
+    cam_objects = []
+    
+    for i, cam_file in enumerate(cam_files):
+        with open(cam_file, 'r') as f:
+            cam_data = json.load(f)
+        
+        # Create camera data
+        cam = bpy.data.cameras.new(f"Camera_{i:04d}")
+        cam_obj = bpy.data.objects.new(f"Camera_{i:04d}", cam)
+        cam_collection.objects.link(cam_obj)
+        
+        # Set intrinsics (focal length)
+        intrinsics = cam_data.get('intrinsics', [])
+        width = cam_data.get('width', 256)
+        height = cam_data.get('height', 192)
+        
+        if len(intrinsics) >= 3:
+            fx = intrinsics[0][0]
+            fy = intrinsics[1][1]
+            
+            # Calculate sensor size and focal length
+            cam.sensor_width = 32  # Default sensor width in mm
+            cam.lens = fx / width * cam.sensor_width * 1000  # Convert to mm
+        
+        # Set extrinsics (pose)
+        extrinsics = cam_data.get('extrinsics', [])
+        if len(extrinsics) == 4 and len(extrinsics[0]) == 4:
+            # Convert to Blender matrix
+            # SpaTracker2 uses OpenCV convention (Y down, Z forward)
+            # Blender uses Z up, -Y forward
+            cv_to_blender = mathutils.Matrix([
+                [1, 0, 0, 0],
+                [0, -1, 0, 0],
+                [0, 0, -1, 0],
+                [0, 0, 0, 1]
+            ])
+            
+            ext_mat = mathutils.Matrix(extrinsics)
+            blender_mat = ext_mat @ cv_to_blender
+            cam_obj.matrix_world = blender_mat
+        
+        # Set camera size for visualization
+        cam_obj.scale = (camera_size, camera_size, camera_size)
+        
+        # Set visibility keyframes (same as PLY objects)
+        current_frame = frame_start + i
+        
+        cam_obj.hide_viewport = True
+        cam_obj.hide_render = True
+        cam_obj.keyframe_insert(data_path="hide_viewport", frame=current_frame - 0.5)
+        cam_obj.keyframe_insert(data_path="hide_render", frame=current_frame - 0.5)
+        
+        cam_obj.hide_viewport = False
+        cam_obj.hide_render = False
+        cam_obj.keyframe_insert(data_path="hide_viewport", frame=current_frame)
+        cam_obj.keyframe_insert(data_path="hide_render", frame=current_frame)
+        
+        cam_obj.hide_viewport = True
+        cam_obj.hide_render = True
+        cam_obj.keyframe_insert(data_path="hide_viewport", frame=current_frame + 0.5)
+        cam_obj.keyframe_insert(data_path="hide_render", frame=current_frame + 0.5)
+        
+        cam_objects.append(cam_obj)
+    
+    # Set first camera as active
+    if cam_objects:
+        context.scene.camera = cam_objects[0]
+    
+    print(f"  Imported {len(cam_objects)} cameras")
+
+
+def import_ply_sequence(context, filepath, frame_start=1, scale=1.0,
+                        use_vertex_colors=True, create_particles=False,
+                        point_size=0.01, import_cameras=True, camera_size=0.1):
+    """Main import function."""
+
     filepath = Path(filepath)
     folder = filepath.parent
-    
+
     # Find PLY sequence
     ply_files = find_ply_sequence(filepath)
-    
+
     if not ply_files:
         raise ValueError(f"No PLY files found in {folder}")
-    
+
     print(f"Found {len(ply_files)} PLY files")
-    
+
     # Load metadata
     metadata = load_metadata(folder)
     fps = metadata.get('fps', 30) if metadata else 30
-    
+
     # Create collection
     collection = bpy.data.collections.new("SpaTracker2_Points")
     context.scene.collection.children.link(collection)
-    
+
     # Set scene frame range
     context.scene.frame_start = frame_start
     context.scene.frame_end = frame_start + len(ply_files) - 1
+    context.scene.render.fps = fps
+
+    # Import cameras if available
+    if import_cameras:
+        cameras_folder = folder / 'cameras'
+        if cameras_folder.exists():
+            import_cameras_from_folder(context, cameras_folder, frame_start, fps, camera_size, collection)
     context.scene.render.fps = fps
     
     # Create objects for each frame

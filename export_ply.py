@@ -171,9 +171,11 @@ def export_ply_sequence(npz_path, output_dir, fps=30, scale=1.0, color_source='v
     output_dir = Path(output_dir)
     trajectory_dir = output_dir / 'trajectory'
     pointcloud_dir = output_dir / 'pointcloud'
-    
+    cameras_dir = output_dir / 'cameras'
+
     trajectory_dir.mkdir(parents=True, exist_ok=True)
     pointcloud_dir.mkdir(parents=True, exist_ok=True)
+    cameras_dir.mkdir(parents=True, exist_ok=True)
     
     # Prepare video colors if needed
     video_colors = None
@@ -257,7 +259,33 @@ def export_ply_sequence(npz_path, output_dir, fps=30, scale=1.0, color_source='v
             
             progress = 50 + int((t + 1) / T * 50)
             print(f"Point Cloud Progress: {progress}%")
-    
+
+    # Export camera poses
+    extrinsics = data.get('extrinsics', None)
+    if extrinsics is not None:
+        print(f"Exporting {T} frames of camera poses...")
+        
+        for t in range(T):
+            ext = extrinsics[t]
+            intr = intrinsics[t] if intrinsics.ndim == 3 else intrinsics
+            
+            # Create camera data JSON
+            camera_data = {
+                'frame': t,
+                'extrinsics': ext.tolist(),
+                'intrinsics': intr.tolist(),
+                'width': W if 'W' in locals() else 256,
+                'height': H if 'H' in locals() else 192
+            }
+            
+            # Write camera JSON file
+            cam_path = cameras_dir / f"camera_{t:06d}.json"
+            with open(cam_path, 'w') as f:
+                json.dump(camera_data, f, indent=2)
+            
+            progress = int((t + 1) / T * 100)
+            print(f"Camera Progress: {progress}%")
+
     data.close()
     
     # Write metadata
@@ -268,17 +296,21 @@ def export_ply_sequence(npz_path, output_dir, fps=30, scale=1.0, color_source='v
         'total_frames': T,
         'export_time': datetime.now().isoformat()
     }
-    
+
     if coords is not None:
         metadata['trajectory_points'] = coords.shape[1]
     
+    if extrinsics is not None:
+        metadata['has_cameras'] = True
+
     import json
     with open(output_dir / 'metadata.json', 'w') as f:
         json.dump(metadata, f, indent=2)
-    
+
     print(f"Export complete! PLY files saved to {output_dir}")
     print(f"  - Trajectory: {trajectory_dir}")
     print(f"  - Point Cloud: {pointcloud_dir}")
+    print(f"  - Cameras: {cameras_dir}")
 
 
 def main():

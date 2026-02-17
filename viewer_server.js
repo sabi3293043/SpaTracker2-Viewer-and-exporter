@@ -430,14 +430,18 @@ function handleExport(req, res) {
           // Add trajectory and pointcloud folders
           const trajectoryPath = path.join(plyDir, 'trajectory')
           const pointcloudPath = path.join(plyDir, 'pointcloud')
-          
+          const camerasPath = path.join(plyDir, 'cameras')
+
           if (fs.existsSync(trajectoryPath)) {
             archive.directory(trajectoryPath, 'trajectory')
           }
           if (fs.existsSync(pointcloudPath)) {
             archive.directory(pointcloudPath, 'pointcloud')
           }
-          
+          if (fs.existsSync(camerasPath)) {
+            archive.directory(camerasPath, 'cameras')
+          }
+
           // Add Blender import script
           const blenderScript = path.join(__dirname, 'blender_addon', 'import_spatracker2_ply.py')
           if (fs.existsSync(blenderScript)) {
@@ -455,6 +459,7 @@ This folder contains animated 3D data exported from SpaTracker2.
 Folders:
 - trajectory/: Sparse trajectory points (tracked features)
 - pointcloud/: Dense point cloud from depth maps
+- cameras/: Camera pose data for each frame (JSON)
 
 To import in Blender:
 1. Open Blender
