@@ -18,6 +18,7 @@ Arguments:
 import numpy as np
 import argparse
 import os
+import json
 from pathlib import Path
 from datetime import datetime
 
@@ -299,11 +300,10 @@ def export_ply_sequence(npz_path, output_dir, fps=30, scale=1.0, color_source='v
 
     if coords is not None:
         metadata['trajectory_points'] = coords.shape[1]
-    
+
     if extrinsics is not None:
         metadata['has_cameras'] = True
 
-    import json
     with open(output_dir / 'metadata.json', 'w') as f:
         json.dump(metadata, f, indent=2)
 
